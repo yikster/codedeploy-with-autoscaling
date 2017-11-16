@@ -1,0 +1,464 @@
+# Copyright 2017-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License").
+# You may not use this file except in compliance with the License. A copy of the License is located at
+#
+# http://aws.amazon.com/apache2.0/
+#
+# CodeDeployAutoscalingTomcatInVPC.yaml
+#
+# This is a CloudFormation template that creates the sample environment
+# for the demonstration of the autoscaling deployments for AWS CodeDeploy.
+#
+# The main components that are created include:
+#
+# LunchConfig - This is a launch configuration that will
+# bring up instances with version 1 of the code.
+#
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create AutoScaling, ELB with CodeDeploy in VPC, 2 public subnets, 2 private subnets
+
+# Define the mappings for the AmazonLinux in the regions that
+# offer CodeDeploy.
+
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      amazonlinux: ami-2803ac4e
+    ap-northeast-2:
+      amazonlinux: ami-fc862292
+
+# Offer the IP of the workstation host so the template user can log in.
+
+Outputs:
+  LoadBalancer:
+    Description: DNS Name of AWS Elastic Load Balancer
+    Value: !Join ["", ["http://", !GetAtt LoadBalancer.DNSName]]
+  ApplicationBucket:
+    Description: Use this bucket for deploy application
+    Value: !Ref DeploymentBucket
+  AutoScalingGroup:
+    Description: Initial auto scaling group
+    Value: !Ref AutoScalingGroup
+
+  CloudWatchLogsLink:
+    Description: LogStream list
+    Value: !Join ["", ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/cloudwatch/home?region=ap-northeast-2#logs:" ] ]
+  CloudWatchLogGroupName:
+    Description: The name of the CloudWatch log group
+    Value: !Join ["", ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/cloudwatch/home?region=ap-northeast-2#logStream:group=", !Ref TomcatLogGroup ]]
+  CloudWatchChart:
+    Description: Sample Chart of requests and BytesTransferred
+    Value: !Join ["", ["https://", !Ref "AWS::Region", ".console.aws.amazon.com/cloudwatch/home?region=ap-northeast-2#metricsV2:graph=~(view~'timeSeries~stacked~false~metrics~(~(~'test*2f200s~'test200Count~(period~10~stat~'Sum))~(~'test*2fBytesTransferred~'testBytesTransferred~(yAxis~'right~period~10~stat~'Sum))~(~'test*2f404s~'test404Count~(period~10~stat~'Sum)))~region~'ap-northeast-2);namespace=test/404s" ]]
+
+
+# Request a key pair, AZ, and a prefix that will be used to assign
+# resource name tags.
+
+Parameters:
+  KeyPairName:
+    Description: EC2 keypair for hosts
+    Type: AWS::EC2::KeyPair::KeyName
+  OperatorEmail:
+    Description: Email address to notify if there are any scaling operations
+    Type: String
+  VpcId:
+    Description: "Id of an existing VPC"
+    Type: "String"
+  PrivateSubnet1:
+    Description: "PrivateSubnet1"
+    Type: String
+  PrivateSubnet2:
+    Description: "PrivateSubnet2"
+    Type: String
+  PublicSubnet1:
+    Description: "PublicSubnet1"
+    Type: String
+  PublicSubnet2:
+    Description: "PublicSubnet2"
+    Type: String
+  BucketName:
+    Description: "Deploy BucketName, must be a-z, -, 0-9"
+    Type: String
+    MinLength: 4
+    MaxLength: 20
+    AllowedPattern: ^[a-z0-9\-]*$
+
+Resources:
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      ConnectionSettings:
+        IdleTimeout: 60
+      HealthCheck:
+        HealthyThreshold: '2'
+        Interval: '7'
+        Target: HTTP:8080/
+        Timeout: '5'
+        UnhealthyThreshold: '2'
+      Listeners:
+      - InstancePort: '8080'
+        InstanceProtocol: HTTP
+        LoadBalancerPort: '80'
+        Protocol: HTTP
+      Scheme: internet-facing
+      SecurityGroups: [!Ref ELBSecurityGroup ]
+      Subnets: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      Tags:
+      - Key: Name
+        Value:
+          !Join ["", [ !Ref "AWS::StackName", "-elb"] ]
+
+# AutoScalingGroup
+#
+# This is the autoscaling group for the Blue/Green environment.
+# This will be used for version 1 of the code.  When version 2 is
+# deployed, CodeDeploy will copy this autoscaling group and attach
+# new instances to it.
+
+  AutoScalingGroup:
+    Properties:
+      Cooldown: '60'
+      LaunchConfigurationName:
+        Ref: LunchConfig
+      LoadBalancerNames:
+      - Ref: LoadBalancer
+      MaxSize: '2'
+      MinSize: '2'
+      Tags:
+      - Key: Name
+        PropagateAtLaunch: 'true'
+        Value:
+          !Join ["", [ !Ref "AWS::StackName", "-asg"] ]
+      VPCZoneIdentifier: [!Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
+    CreationPolicy:
+      ResourceSignal:
+        Count: '2'
+        Timeout: PT10M
+    Type: AWS::AutoScaling::AutoScalingGroup
+
+# CodeDeploy application
+
+  CodeDeployApp:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: !Join ["", [ !Ref "AWS::StackName", "-app"] ]
+
+# DeploymentGroup - CodeDeploy deployment group
+
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Properties:
+      ApplicationName: !Ref CodeDeployApp
+      DeploymentGroupName: !Join ["", [ !Ref "AWS::StackName", "-dg"] ]
+      ServiceRoleArn: !GetAtt DeploymentRole.Arn
+      AutoScalingGroups: [!Ref AutoScalingGroup]
+
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - codedeploy.amazonaws.com
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - Ref: InstanceRole
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+            - codedeploy.amazonaws.com
+        Version: '2012-10-17'
+      Policies:
+      - PolicyName: LogRolePolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:Create*
+            - logs:PutLogEvents
+            - s3:GetObject
+            Resource:
+            - arn:aws:logs:*:*:*
+            - arn:aws:s3:::*
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy
+      - arn:aws:iam::aws:policy/AutoScalingReadOnlyAccess
+      - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      - arn:aws:iam::aws:policy/AWSCodeDeployReadOnlyAccess
+
+
+
+# WebSecurityGroup
+#
+# This is the security group for the instances created
+# by the launch configuration.  Only ports 22 and 80
+# are needed.
+
+  ELBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to ELB
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        IpProtocol: tcp
+        ToPort: '80'
+      Tags:
+      - Key: Name
+        Value:
+          !Join ["", [ !Ref "AWS::StackName", "-elb-sg"] ]
+      VpcId: !Ref VpcId
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable access to web servers
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: '22'
+        IpProtocol: tcp
+        ToPort: '22'
+      - CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        IpProtocol: tcp
+        ToPort: '80'
+      - SourceSecurityGroupId: !Ref ELBSecurityGroup
+        FromPort: '8080'
+        IpProtocol: tcp
+        ToPort: '8080'
+      Tags:
+      - Key: Name
+        Value:
+          !Join ["", [ !Ref "AWS::StackName", "-web-sg"] ]
+      VpcId: !Ref VpcId
+
+# LunchConfig
+#
+# This is the launch configuration for the autoscaling group.
+# The metadata will be used to install version 1 of the
+# application and to set up the CodeDeploy agent. It also
+# removes the index.html file which has a "higher" priority
+# in the Apache server.
+  TomcatLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+  404MetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: TomcatLogGroup
+      FilterPattern: "[ip, identity, user_id, timestamp, request, status_code = 404, size, ...]"
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref "AWS::StackName"
+        MetricName: Response404
+  200MetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: TomcatLogGroup
+      FilterPattern: "[ip, identity, user_id, timestamp, request, status_code = 200, size, ...]"
+      MetricTransformations:
+      - MetricValue: '1'
+        MetricNamespace: !Ref "AWS::StackName"
+        MetricName: Response200
+  BytesTransferredMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: TomcatLogGroup
+      FilterPattern: "[ip, identity, user_id, timestamp, request, status_code, size, ...]"
+      MetricTransformations:
+      - MetricValue: "$size"
+        MetricNamespace: !Ref "AWS::StackName"
+        MetricName: BytesTransferred
+  404Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The number of 404s is greater than 2 over 2 minutes
+      MetricName: Response404
+      Namespace: !Ref "AWS::StackName"
+      Statistic: Sum
+      Period: '60'
+      EvaluationPeriods: '2'
+      Threshold: '2'
+      AlarmActions:
+      - Ref: AlarmNotificationTopic
+      ComparisonOperator: GreaterThanThreshold
+  BandwidthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The average volume of traffic is greater 3500 KB over 10 minutes
+      MetricName: BytesTransferred
+      Namespace: !Ref "AWS::StackName"
+      Statistic: Average
+      Period: '300'
+      EvaluationPeriods: '2'
+      Threshold: '3500'
+      AlarmActions:
+      - Ref: AlarmNotificationTopic
+      ComparisonOperator: GreaterThanThreshold
+  AlarmNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Endpoint:
+          Ref: OperatorEmail
+        Protocol: email
+  LunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+          - amazonlinux1
+        amazonlinux1:
+          commands:
+            amazonlinux1cmd4:
+              command: mkdir -p /usr/share/tomcat7/logs
+              command: chown -R ec2-user:ec2-user /home/ec2-user
+              command: mkdir -p /etc/cfn/hooks.d
+          files:
+            /tmp/awslogs/tomcat7_accesslog.conf:
+              content: !Sub |
+                [general]
+                state_file= /var/awslogs/agent-state
+
+                [tomcat7_accesslog]
+                file = /usr/share/tomcat7/logs/localhost_access_log.*
+                log_group_name = ${TomcatLogGroup}
+                log_stream_name = {instance_id}/tomcat7.log
+                datetime_format = '%d/%b/%Y:%H:%M:%S %z'
+              mode: '000400'
+              owner: tomcat
+              group: tomcat
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+              group: root
+              mode: '000400'
+              owner: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.LunchConfig.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v -s ${AWS::StackId} -r LunchConfig --region ${AWS::Region}
+                runas=root
+              group: root
+              mode: '000400'
+              owner: root
+            #
+            # codedeployinstall
+            #
+            # This copies the code deploy installation script from the AWS S3 buckets.
+            #
+            /home/ec2-user/codedeployinstall:
+              group: ec2-user
+              mode: '000755'
+              owner: ec2-user
+              source:
+                !Join [ "", [ "http://aws-codedeploy-", !Ref "AWS::Region",".s3.amazonaws.com/latest/install" ] ]
+            #
+            # codedeployinstallpt2
+            #
+            # This actually installs the code deploy agent.  A script is used
+            # because we need ingest a "yes" into the installation process.
+            # This will be run in the command section below.
+            #
+            /home/ec2-user/codedeployinstallpt2:
+              content: !Sub |
+                #!/bin/bash
+                yes|/home/ec2-user/codedeployinstall auto
+              group: ec2-user
+              mode: '000755'
+              owner: ec2-user
+          commands:
+            amazonlinux1cmd1:
+              command: /home/ec2-user/codedeployinstallpt2
+          packages:
+            yum:
+              aws-cfn-bootstrap: []
+              aws-cli: []
+              java-1.8.0-openjdk-headless.x86_64: []
+              tomcat7: []
+              tomcat7-webapps: []
+#              ec2-ami-tools: []
+#              ec2-api-tools: []
+#              sysv-rc-conf: []
+            python:
+              boto3: []
+              awscli: []
+          services:
+            sysvinit:
+              tomcat7:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId:
+        Fn::FindInMap:
+        - RegionMap
+        - Ref: AWS::Region
+        - amazonlinux
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+      - Ref: WebSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          function error_exit
+          {
+            /opt/aws/bin/cfn-signal -e 1 -r "$1" --stack ${AWS::StackId} --resource AutoScalingGroup --region ${AWS::Region}
+            exit 1
+          }
+          yum -y update
+          yum -y install aws-cfn-bootstrap aws-cli java-1.8.0-openjdk-headless.x86_64 tomcat7 tomcat7-webapps python-setuptools python-pip python-software-properties
+          mkdir -p /tmp/codedeploy-test
+          rm -rf /usr/share/tomcat7/webapps/ROOT/*
+          rm -rf /usr/share/tomcat7/examples
+          rm -rf /usr/share/tomcat7/sample
+          mkdir -p /usr/share/tomcat7/logs
+          service tomcat7 start
+          easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          # Get the CloudWatch Logs agent
+          wget https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py
+          # Install the CloudWatch Logs agent
+          /opt/aws/bin/cfn-init --region ${AWS::Region} -s ${AWS::StackId} -r LunchConfig
+          #/opt/aws/bin/cfn-hup || error_exit ''Failed to start cfn-hup''
+          python awslogs-agent-setup.py -n -r ${AWS::Region} -c /tmp/awslogs/tomcat7_accesslog.conf || error_exit 'Failed to run CloudWatch Logs agent setup'
+
+          /opt/aws/bin/cfn-signal -e 0 -r 'BlueGreen configuration' --stack ${AWS::StackId} --resource AutoScalingGroup --region ${AWS::Region}

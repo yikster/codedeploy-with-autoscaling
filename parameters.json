@@ -1,0 +1,34 @@
+[
+  {
+    "ParameterKey": "KeyPairName",
+    "ParameterValue":	"KEYPAIR"
+  },
+  {
+    "ParameterKey": "OperatorEmail",
+    "ParameterValue":	"test-ops@example.com"
+  },
+  {
+    "ParameterKey": "VpcId",
+    "ParameterValue":	"vpc-12345678"
+  },
+  {
+    "ParameterKey": "PrivateSubnet1",
+    "ParameterValue":	"subnet-12345678"
+  },
+  {
+    "ParameterKey": "PrivateSubnet2",
+    "ParameterValue":	"subnet-12345679"
+  },
+  {
+    "ParameterKey": "PublicSubnet1",
+    "ParameterValue":	"subnet-1234567a"
+  },
+  {
+    "ParameterKey": "PublicSubnet2",
+    "ParameterValue":	"subnet-1234567b"
+  },
+  {
+    "ParameterKey": "BucketName",
+    "ParameterValue":	"app1-bucket"
+  }
+]
