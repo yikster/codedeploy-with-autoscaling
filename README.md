@@ -21,12 +21,14 @@ Auto Scaling helps you ensure that you have the correct number of Amazon EC2 ins
 http://docs.aws.amazon.com/autoscaling/latest/userguide/WhatIsAutoScaling.html
 
 # Parameters for CloudFormation
+vpc_id, subnet_ids, bucket_name, keypair, operator email
 
 # Parameters for CodeDeploy
+It is defined automatically from CloudFormation Stack Name
 
 # How to create aws resources with cloudformation
 ./create-codedeploy-with-vpc.sh region appName
 
 # How to deploy application
 cd tomcat-app
-./buildDeploy.sh region appName appBucketName
+./buildDeploy.sh region appName(=StackName-app) appBucketName
