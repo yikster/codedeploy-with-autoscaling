@@ -3,10 +3,7 @@ Create cloudformation stack for codedeploy with autoscaling and cloudwatch logs,
 This is for users that they don't have CI/CD environment but they want to use AutoScaling.
 
 # Required 
-1 VPC
-2 Public Subnet (for multiAz)
-2 Private Subnet(for multiAz)
-1 KeyPair
+1 VPC, 2 Public Subnet (for multiAz), 2 Private Subnet(for multiAz), 1 KeyPair
 
 # Basics
 If you're not familiar with AWS, or you haven't done this part, each AWS authored guide has a section on getting started, you might already be an expert however it might also be worth a quick read just to make sure the reader of this guide is in the same place, please have a look at:
