@@ -78,13 +78,6 @@ Parameters:
   PublicSubnet2:
     Description: "PublicSubnet2"
     Type: String
-  BucketName:
-    Description: "Deploy BucketName, must be a-z, -, 0-9"
-    Type: String
-    MinLength: 4
-    MaxLength: 20
-    AllowedPattern: ^[a-z0-9\-]*$
-
 Resources:
 
   LoadBalancer:
@@ -95,7 +88,7 @@ Resources:
       HealthCheck:
         HealthyThreshold: '2'
         Interval: '7'
-        Target: HTTP:8080/
+        Target: HTTP:8080/examples/index.html
         Timeout: '5'
         UnhealthyThreshold: '2'
       Listeners:
@@ -148,6 +141,10 @@ Resources:
 
 # DeploymentGroup - CodeDeploy deployment group
 
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join ["", [ !Ref "AWS::StackName", "-app-bkt"] ]
   DeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Properties:
@@ -155,12 +152,15 @@ Resources:
       DeploymentGroupName: !Join ["", [ !Ref "AWS::StackName", "-dg"] ]
       ServiceRoleArn: !GetAtt DeploymentRole.Arn
       AutoScalingGroups: [!Ref AutoScalingGroup]
-
-  DeploymentBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref BucketName
-
+      Deployment: 
+        Description: FirstTime
+        IgnoreApplicationStopFailures: true
+        Revision: 
+          RevisionType: S3
+          S3Location:
+            Bucket: apps-ap-northeast-2
+            BundleType: Zip
+            Key: sample_v2.zip
   DeploymentRole:
     Type: AWS::IAM::Role
     Properties:
