@@ -2,6 +2,8 @@
 Create cloudformation stack for codedeploy with autoscaling and cloudwatch logs, cloudwatch alarms
 This is for users that they don't have CI/CD environment but they want to use AutoScaling.
 
+# Required 
+1 VPC, 2 Public Subnet (for multiAz), 2 Private Subnet(for multiAz), 1 KeyPair
 
 # Basics
 If you're not familiar with AWS, or you haven't done this part, each AWS authored guide has a section on getting started, you might already be an expert however it might also be worth a quick read just to make sure the reader of this guide is in the same place, please have a look at:
@@ -19,12 +21,14 @@ Auto Scaling helps you ensure that you have the correct number of Amazon EC2 ins
 http://docs.aws.amazon.com/autoscaling/latest/userguide/WhatIsAutoScaling.html
 
 # Parameters for CloudFormation
+vpc_id, subnet_ids, bucket_name, keypair, operator email
 
 # Parameters for CodeDeploy
+It is defined automatically from CloudFormation Stack Name
 
 # How to create aws resources with cloudformation
 ./create-codedeploy-with-vpc.sh region appName
 
 # How to deploy application
 cd tomcat-app
-./buildDeploy.sh region appName appBucketName
+./buildDeploy.sh region appName(=StackName-app) appBucketName
