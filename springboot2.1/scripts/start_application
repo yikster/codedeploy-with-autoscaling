@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e
+
+DEPLOY_TO_ROOT='true'
+
+TEMP_STAGING_DIR='/tmp/codedeploy-deployment-staging-area'
+WAR_STAGED_LOCATION="$TEMP_STAGING_DIR/SampleMavenTomcatApp.war"
+
+rm -rf /var/lib/tomcat7/webapps/ROOT/*
+unzip $WAR_STAGED_LOCATION -d /var/lib/tomcat7/webapps/ROOT
+service tomcat7 start

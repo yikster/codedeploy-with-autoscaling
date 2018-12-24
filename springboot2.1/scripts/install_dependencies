@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+yum -y update
+yum -y install aws-cfn-bootstrap aws-cli java-1.8.0-openjdk-headless.x86_64 tomcat7 tomcat7-webapps python-setuptools python-pip python-software-properties
+mkdir -p /tmp/codedeploy-test
+rm -rf /usr/share/tomcat7/webapps/ROOT/*
+rm -rf /usr/share/tomcat7/examples
+rm -rf /usr/share/tomcat7/sample
+mkdir -p /usr/share/tomcat7/logs
