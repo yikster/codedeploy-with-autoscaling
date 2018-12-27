@@ -3,7 +3,7 @@ xzversion: 0.1
 phases:
   build:
     commands:
-      - mkdir ~/build
+      - mkdir /home/ec2-user/build
       - echo Build completed on `date`
       - chmod +x ./gradlew
       - ./gradlew build
@@ -20,5 +20,5 @@ artifacts:
     - appspec.yml
     - build/libs/*.jar
     - scripts/**
-  discard-paths: yes
+
 

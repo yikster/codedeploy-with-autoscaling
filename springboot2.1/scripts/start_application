@@ -2,11 +2,7 @@
 
 set -e
 
-DEPLOY_TO_ROOT='true'
+APP_PATH=/home/ec2-user/build/libs
+APPLICATION_JAR=demo-0.0.1-SNAPSHOT.jar
 
-TEMP_STAGING_DIR='/tmp/codedeploy-deployment-staging-area'
-WAR_STAGED_LOCATION="$TEMP_STAGING_DIR/SampleMavenTomcatApp.war"
-
-rm -rf /var/lib/tomcat7/webapps/ROOT/*
-unzip $WAR_STAGED_LOCATION -d /var/lib/tomcat7/webapps/ROOT
-service tomcat7 start
+nohup java -jar ${APP_PATH}/${APPLICATION_JAR} > /dev/null &

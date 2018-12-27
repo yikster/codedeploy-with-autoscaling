@@ -1,5 +1,11 @@
 #!/bin/bash
 
-set -e
 
-service tomcat7 stop
+APPLICATION_JAR=demo-0.0.1-SNAPSHOT.jar
+PID=$(pgrep -f $APPLICATION_JAR)
+if [ -z $PID ]
+then
+  echo "There are no running $APPLICATION_JAR"
+else
+  echo "Kill running process PID[$PID]"
+fi

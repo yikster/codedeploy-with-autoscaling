@@ -13,11 +13,12 @@ import com.amazonaws.services.codedeploy.model.GetDeploymentGroupResult;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
-import org.springframework.beans.factory.annotation.Value;
+import com.amazonaws.util.EC2MetadataUtils;
+
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.util.*;
 import java.util.logging.Logger;
@@ -26,71 +27,101 @@ import java.util.logging.Logger;
 public class IndexController {
     private final static Logger LOGGER = Logger.getLogger(IndexController.class.getName());
 
-    @Value("${APPLICATION_NAME}")
-    private String applicationName;
-
-    @Value("${DEPLOYMENT_GROUP_NAME}")
-    private String deploymentGroupName;
-
     private AmazonCodeDeploy codeDeploy = AmazonCodeDeployClientBuilder.defaultClient();
 
     private AmazonEC2 ec2 = AmazonEC2ClientBuilder.defaultClient();
 
     private AmazonAutoScaling autoScaling = AmazonAutoScalingClientBuilder.defaultClient();
 
-    @RequestMapping(value = "/", method = RequestMethod.GET)
-    public String displayIndex(Model model) {
+    @GetMapping(value = "/")
+    @Cacheable
+    public @ResponseBody Map displayIndex() {
 
-        LOGGER.info("Application name set to: " + applicationName);
-        model.addAttribute("applicationName", applicationName);
-        LOGGER.info("Deployment Group Name set to: " + deploymentGroupName);
-        model.addAttribute("deploymentGroupName", deploymentGroupName);
-        if (deploymentGroupName.contains("Production")) {
-    		model.addAttribute("instanceIds", Collections.<String>emptyList());
-    		return "/index";
-    	}
-        
-        final GetDeploymentGroupResult getResult = codeDeploy.getDeploymentGroup(new GetDeploymentGroupRequest()
-                .withApplicationName(applicationName)
-                .withDeploymentGroupName(deploymentGroupName));
+        Map<String, Object> result = new HashMap<>();
 
-        final List<String> instanceIds = new ArrayList<>();
-        for (final EC2TagFilter filter : getResult.getDeploymentGroupInfo().getEc2TagFilters()) {
-            Filter ec2DescribeFilter = getFilter(filter);
-            LOGGER.info("Calling EC2 Describe Instances with " + ec2DescribeFilter.getName() + " and values " + ec2DescribeFilter.getValues());
-            final DescribeInstancesResult describeResult = ec2.describeInstances(new DescribeInstancesRequest()
-                    .withFilters(Collections.singletonList(ec2DescribeFilter)));
-            for (final Reservation reservation : describeResult.getReservations()) {
-                for (final Instance instance : reservation.getInstances()) {
-                    LOGGER.info("Found instance " + instance.getInstanceId());
-                    instanceIds.add(instance.getInstanceId());
-                }
-            }
-        }
-        for (final com.amazonaws.services.codedeploy.model.AutoScalingGroup codeDeployGroup : getResult.getDeploymentGroupInfo().getAutoScalingGroups()) {
-            LOGGER.info("Calling AutoScaling Describe Auto Scaling Groups with Auto Scaling Group Name " + codeDeployGroup.getName());
-            final DescribeAutoScalingGroupsResult describeResult = autoScaling.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest()
-                    .withAutoScalingGroupNames(codeDeployGroup.getName()));
-            for (final AutoScalingGroup autoScalingGroup : describeResult.getAutoScalingGroups()) {
-                for (final com.amazonaws.services.autoscaling.model.Instance instance : autoScalingGroup.getInstances()) {
-                    LOGGER.info("Found instance " + instance.getInstanceId());
-                    instanceIds.add(instance.getInstanceId());
-                }
-            }
-        }
+        String currentInstenceId = EC2MetadataUtils.getInstanceId();
+
+        DescribeInstancesResult describeInstancesResult = ec2.describeInstances(new DescribeInstancesRequest().withInstanceIds(currentInstenceId));
+        if(describeInstancesResult != null && describeInstancesResult.getReservations() != null && describeInstancesResult.getReservations().size() >0)
+            result.put("Instance", describeInstancesResult.getReservations().get(0));
+        List<Tag> tags = new ArrayList<>();
+
+
+        String instanceName = "";
+        List<String> instanceIds = new ArrayList<>();
         final Map<String, String> instanceStates = new HashMap<>();
-        if (!instanceIds.isEmpty()) {
-            final DescribeInstanceStatusResult result = ec2.describeInstanceStatus(new DescribeInstanceStatusRequest()
-    			    .withInstanceIds(instanceIds));
-            for (final InstanceStatus status : result.getInstanceStatuses()) {
-                LOGGER.info("Found instance " + status.getInstanceId() + " in state " + status.getInstanceStatus().getStatus());
-            	instanceStates.put(status.getInstanceId(), status.getInstanceStatus().getStatus());
-            }
-        }
-        model.addAttribute("instanceIds", instanceIds);
-        model.addAttribute("instanceStates", instanceStates);
 
-        return "/index";
+        try {
+            tags = describeInstancesResult.getReservations().get(0).getInstances().get(0).getTags();
+
+            for(int i=0;i<tags.size();i++) {
+                Tag tag = tags.get(i);
+                if (tag.getKey().equals("Name")) {
+                    instanceName = tag.getValue();
+                    break;
+                }
+            }
+
+
+
+           if (instanceName.isEmpty())
+                instanceName = "springboot03-asg";
+
+            String projectName = instanceName.replace("-asg", "");
+            String applicationName = projectName + "-app";
+            String deploymentGroupName = projectName + "-dg";
+
+
+            LOGGER.info("Application name set to: " + applicationName);
+            result.put("applicationName", applicationName);
+            LOGGER.info("Deployment Group Name set to: " + deploymentGroupName);
+            result.put("deploymentGroupName", deploymentGroupName);
+
+            final GetDeploymentGroupResult getResult = codeDeploy.getDeploymentGroup(new GetDeploymentGroupRequest()
+                    .withApplicationName(applicationName)
+                    .withDeploymentGroupName(deploymentGroupName));
+
+
+            for (final EC2TagFilter filter : getResult.getDeploymentGroupInfo().getEc2TagFilters()) {
+                Filter ec2DescribeFilter = getFilter(filter);
+                LOGGER.info("Calling EC2 Describe Instances with " + ec2DescribeFilter.getName() + " and values " + ec2DescribeFilter.getValues());
+                final DescribeInstancesResult describeResult = ec2.describeInstances(new DescribeInstancesRequest()
+                        .withFilters(Collections.singletonList(ec2DescribeFilter)));
+                for (final Reservation reservation : describeResult.getReservations()) {
+                    for (final Instance instance : reservation.getInstances()) {
+                        LOGGER.info("Found instance " + instance.getInstanceId());
+                        instanceIds.add(instance.getInstanceId());
+                    }
+                }
+            }
+            for (final com.amazonaws.services.codedeploy.model.AutoScalingGroup codeDeployGroup : getResult.getDeploymentGroupInfo().getAutoScalingGroups()) {
+                LOGGER.info("Calling AutoScaling Describe Auto Scaling Groups with Auto Scaling Group Name " + codeDeployGroup.getName());
+                final DescribeAutoScalingGroupsResult describeResult = autoScaling.describeAutoScalingGroups(new DescribeAutoScalingGroupsRequest()
+                        .withAutoScalingGroupNames(codeDeployGroup.getName()));
+                for (final AutoScalingGroup autoScalingGroup : describeResult.getAutoScalingGroups()) {
+                    for (final com.amazonaws.services.autoscaling.model.Instance instance : autoScalingGroup.getInstances()) {
+                        LOGGER.info("Found instance " + instance.getInstanceId());
+                        instanceIds.add(instance.getInstanceId());
+                    }
+                }
+            }
+            if (!instanceIds.isEmpty()) {
+                final DescribeInstanceStatusResult describeInstanceStatusResult = ec2.describeInstanceStatus(new DescribeInstanceStatusRequest()
+                        .withInstanceIds(instanceIds));
+                for (final InstanceStatus status : describeInstanceStatusResult.getInstanceStatuses()) {
+                    LOGGER.info("Found instance " + status.getInstanceId() + " in state " + status.getInstanceStatus().getStatus());
+                    instanceStates.put(status.getInstanceId(), status.getInstanceStatus().getStatus());
+                }
+            }
+            result.put("instanceIds", instanceIds);
+            result.put("instanceStates", instanceStates);
+        } catch (Exception e) {
+            result.put("Tags", tags);
+            result.put("Errors", e.getMessage());
+        }
+
+
+        return result;
     }
 
     private Filter getFilter(final EC2TagFilter tagFilter) {
