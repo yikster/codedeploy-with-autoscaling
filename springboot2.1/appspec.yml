@@ -2,7 +2,7 @@ version: 0.0
 os: linux
 files:
   - source: /
-    destination: /home/ec2-user/build/
+    destination: /home/ec2-user
 hooks:
   ApplicationStop:
     - location: scripts/stop_application
@@ -16,3 +16,5 @@ hooks:
       timeout: 300
   ValidateService:
     - location: scripts/basic_health_check.sh
+      timeout: 30
+      runas: root
