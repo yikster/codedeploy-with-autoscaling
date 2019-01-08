@@ -27,12 +27,16 @@ vpc_id, subnet_ids, bucket_name, keypair, operator email
 It is defined automatically from CloudFormation Stack Name
 
 # How to create aws resources with cloudformation
+<pre>
 <code>
-  ./create-codedeploy-with-vpc.sh region appName
+  ./create-codedeploy-with-vpc.sh REGION STACK_NAME(=APPLICATION_NAME) PROFILE 
 </code>
+</pre>
 
 # How to deploy application
+<pre>
 <code>
   cd tomcat-app
-  ./buildDeploy.sh region appName(=StackName-app) appBucketName
+  ./buildDeploy.sh REGION APPLICATION_NAME(=StackName-app) APPLICATION_BUCKET_NAME
 </code>
+</pre>
